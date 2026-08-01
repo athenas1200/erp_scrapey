@@ -1,0 +1,17 @@
+# Logs e arquivos gerados
+logs/
+*.log
+*.json.tmp
+
+# Fotos baixadas
+FOTOS/
+FOTOS_CONC/
+
+# Ambiente Python
+__pycache__/
+*.pyc
+.venv/
+
+# Credenciais (nao versionar)
+*config*.json
+email_config.json
