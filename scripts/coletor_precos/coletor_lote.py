@@ -16,6 +16,17 @@ LOCKFILE = LOGDIR + r'\coletor.lock'
 PROGLOG = LOGDIR + r'\coleta_%s.log' % time.strftime('%Y%m%d_%H%M%S')
 FOTOS_DIR = BASE + r'\FOTOS_CONC'
 os.makedirs(FOTOS_DIR, exist_ok=True)
+MAX_FOTOS = 4   # maximo de fotos por produto
+
+def contar_fotos_locais(codigo):
+    """Conta fotos ja salvas do produto na pasta local FOTOS_CONC do codigo."""
+    p = os.path.join(FOTOS_DIR, codigo)
+    if not os.path.isdir(p):
+        return 0
+    try:
+        return len([f for f in os.listdir(p) if f.lower().endswith(('.webp', '.jpg', '.png', '.jpeg'))])
+    except Exception:
+        return 0
 
 def ja_rodando():
     """Verifica se outro coletor esta em execucao (arquivo lock com PID vivo)."""
@@ -321,31 +332,32 @@ def main():
             continue
 
         # --- ja tem link mapeado? (passada seguinte: usa link salvo, rapido) ---
-        cur.execute("""SELECT url FROM concorrente WHERE produto_codigo=%s
+        cur.execute("""SELECT url, concorrente, site_empresa FROM concorrente
+            WHERE produto_codigo=%s AND url IS NOT NULL AND url<>''
             ORDER BY data_coleta DESC""", (codigo,))
-        links_antigos = [r[0] for r in cur.fetchall() if r[0]]
+        links_antigos = cur.fetchall()
         if links_antigos:
             # tenta scrape dos links salvos (o link mais recente primeiro)
             achou = False
-            for u in links_antigos[:3]:
+            for u, conc_nome, site_emp in links_antigos[:3]:
                 blocos = firecrawl_scrape(u)
                 preco, avista, pix, img = extrair_dados_scrape(blocos)
                 if preco:
-                    # atualiza o registro existente (mesmo dia) ou insere novo
+                    # cria registro NOVO (historico): nunca sobrescreve o anterior
                     cur.execute("""INSERT INTO concorrente
                         (produto_ordem, produto_codigo, produto_nome, ean, ean3, concorrente, url, preco,
-                         preco_avista, preco_pix, site_empresa, data_coleta, data_preco)
-                        SELECT %s,%s,%s,%s,%s, concorrente, url, %s, %s, %s, site_empresa, NOW(), %s
-                        FROM concorrente WHERE url=%s AND produto_codigo=%s ORDER BY id DESC LIMIT 1""",
-                        (ordem, codigo, nome, ean, ean3, preco, avista, pix, hoje, u, codigo))
-                    if img:
+                         preco_avista, preco_pix, site_empresa, cidade, estado, data_coleta, data_preco)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, NOW(), %s)""",
+                        (ordem, codigo, nome, ean, ean3, conc_nome or '', u, preco,
+                         avista, pix, site_emp or ('https://' + extrair_dominio(u)), '', '', hoje))
+                    if img and contar_fotos_locais(codigo) < MAX_FOTOS:
                         dom = extrair_dominio(u)
                         fpasta = os.path.join(FOTOS_DIR, codigo)
                         os.makedirs(fpasta, exist_ok=True)
                         fdest = os.path.join(fpasta, '%s.webp' % dom)
                         baixar_foto(img, fdest)
-                        cur.execute("UPDATE concorrente SET foto_local=%s WHERE url=%s AND produto_codigo=%s AND foto_local IS NULL",
-                                    (fdest, u, codigo))
+                        cur.execute("UPDATE concorrente SET foto_local=%s WHERE url=%s AND produto_codigo=%s AND data_preco=%s AND foto_local IS NULL",
+                                    (fdest, u, codigo, hoje))
                     achou = True
                     n_novo += 1
                     break
@@ -399,28 +411,31 @@ def main():
                 break
             tent_fb += 1
             time.sleep(2)
-        # grava (na primeira passada baixa a foto do concorrente e salva local)
+        # grava (na primeira passada baixa a foto do concorrente e salva local,
+        # no maximo MAX_FOTOS por produto - se ja tem, nao baixa mais)
         fpasta = os.path.join(FOTOS_DIR, codigo)
+        n_fotos = contar_fotos_locais(codigo)
         for c in coletados:
             foto_local = None
             img = None
-            blocos = firecrawl_scrape(c['url'])
-            if blocos:
-                p2, a2, px2, im2 = extrair_dados_scrape(blocos)
-                img = im2
-                if not c['preco'] and p2:
-                    c['preco'] = p2
-                if not c['avista'] and a2:
-                    c['avista'] = a2
-                if not c['pix'] and px2:
-                    c['pix'] = px2
-            if img:
-                os.makedirs(fpasta, exist_ok=True)
-                foto_local = os.path.join(fpasta, '%s.webp' % c['site'])
-                if baixar_foto(img, foto_local):
-                    pass
-                else:
-                    foto_local = None
+            if n_fotos < MAX_FOTOS:
+                blocos = firecrawl_scrape(c['url'])
+                if blocos:
+                    p2, a2, px2, im2 = extrair_dados_scrape(blocos)
+                    img = im2
+                    if not c['preco'] and p2:
+                        c['preco'] = p2
+                    if not c['avista'] and a2:
+                        c['avista'] = a2
+                    if not c['pix'] and px2:
+                        c['pix'] = px2
+                if img:
+                    os.makedirs(fpasta, exist_ok=True)
+                    foto_local = os.path.join(fpasta, '%s.webp' % c['site'])
+                    if baixar_foto(img, foto_local):
+                        n_fotos += 1
+                    else:
+                        foto_local = None
             cur.execute("""INSERT INTO concorrente
                 (produto_ordem, produto_codigo, produto_nome, ean, ean3, concorrente, url, preco,
                  preco_avista, preco_pix, site_empresa, cidade, estado, foto_local, data_coleta, data_preco)

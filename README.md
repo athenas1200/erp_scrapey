@@ -31,6 +31,14 @@ docs/                documentação
 - `S9_Relatorio_Diario` — e-mail diário às 00:00
 - `S9_Coleta_Precos` — coleta de preços diariamente às 23:00 (silencioso, via pythonw)
 
+## Regras de negócio
+
+- **3 preços de 3 sites distintos** por produto (Mercado Livre, Shopmedical, Fisio Store + fallback Google).
+- **Link mapeado**: passadas seguintes usam scrape do link salvo (rápido); se sem preço, busca outra empresa.
+- **Histórico**: cada coleta cria registro novo com data/hora (`data_coleta`), nunca sobrescreve.
+- **Máx. 4 fotos por produto**; se já tiver 4, não baixa mais.
+- **Checkpoint persistente**: retoma de onde parou após reinicialização.
+
 ## Configuração
 
 As credenciais estão nos scripts (não versionar em produção): conexões SQL Server, PostgreSQL (via túnel SSH paramiko), SMTP e conta MEGA.
