@@ -4,10 +4,26 @@ Recebe via stdin um JSON: {"queries": [{"id": 0, "query": "..."}], "delay": 1.0}
 Retorna via stdout um JSON: {"results": {id: [blocos...]}}
 Com backoff em rate limit (429) - espera 60s e re-tenta ate N vezes.
 """
-import sys, json, time, io
+import sys, json, time, io, os
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import asyncio
+
+# Key opcional: se existir C:\S9\firecrawl_key.txt (ou env FIRECRAWL_API_KEY),
+# injeta antes de lancar o npx para sair do modo keyless (rate limit).
+def _carregar_key():
+    try:
+        if not os.environ.get('FIRECRAWL_API_KEY'):
+            p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'firecrawl_key.txt')
+            if os.path.exists(p):
+                with io.open(p, encoding='utf-8') as f:
+                    k = f.read().strip()
+                if k:
+                    os.environ['FIRECRAWL_API_KEY'] = k
+    except Exception:
+        pass
+
+_carregar_key()
 
 def main():
     entrada = json.load(sys.stdin)

@@ -8,6 +8,19 @@ preco, faz fallback no Google (busca geral). Grava na tabela 'concorrente' do PG
 """
 import os, sys, io, json, time, re, subprocess, glob, threading
 
+# Key opcional do Firecrawl (evita rate limit do modo keyless):
+# ler de C:\S9\firecrawl_key.txt se a env nao estiver setada
+if not os.environ.get('FIRECRAWL_API_KEY'):
+    try:
+        _kp = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'firecrawl_key.txt')
+        if os.path.exists(_kp):
+            with io.open(_kp, encoding='utf-8') as f:
+                _k = f.read().strip()
+            if _k:
+                os.environ['FIRECRAWL_API_KEY'] = _k
+    except Exception:
+        pass
+
 LOTE = int(sys.argv[1]) if len(sys.argv) > 1 else 0   # 0 = todos
 # tempo max (s) que um Chrome headless do firecrawl pode ficar preso antes de ser derrubado
 CHROME_TIMEOUT = int(sys.argv[2]) if len(sys.argv) > 2 else 120

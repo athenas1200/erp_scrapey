@@ -12,7 +12,11 @@ gerar relatórios por e-mail.
 - **PostgreSQL**: db `s9_real`, user `postgres`. Acesso via túnel. `session_replication_role = replica` para inserir com FK desativada.
 - **SQL Server**: `192.168.0.101,1435`, db `S9_Real`. Conexão via DSN pyodbc.
 - **MEGA**: conta `bkp.2021romanatian@gmail.com`, pasta `FotosS9`. `mega.py` requer `tenacity==8.2.3` (Python 3.14).
-- **Firecrawl**: MCP keyless (`npx firecrawl-mcp`) — tem rate limit por IP (backoff 60s).
+- **Firecrawl**: MCP (`npx firecrawl-mcp`). MODO KEYLESS TEM RATE LIMIT POR IP — pode bloquear por horas.
+  **Se o log de coleta mostrar "so 0 precos", é rate limit.** Solução: criar API key grátis em
+  `https://www.firecrawl.dev/signin` e colar em `C:\S9\firecrawl_key.txt` (1ª linha). Os scripts
+  (`coletor_lote.py` e `firecrawl_batch.py`) leem esse arquivo e injetam na env `FIRECRAWL_API_KEY`
+  automaticamente. Depois de adicionar a key, reiniciar o coletor.
 
 ## Estrutura
 ```
