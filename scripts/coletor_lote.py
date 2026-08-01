@@ -44,9 +44,9 @@ def _erro_fatal(exc_type, exc, tb):
         pass
 sys.excepthook = _erro_fatal
 
-# python.exe (com console) para subprocess do crawler4ai_busca.py:
-# se o coletor rodar com pythonw, sys.executable aponta p/ pythonw (sem stdout valido).
-PYEXE = r'C:\Users\Pe de Apoio\AppData\Local\Python\pythoncore-3.14-64\python.exe'
+# pythonw.exe (sem janela) para subprocess do crawler4ai_busca.py:
+# funciona via pipe (capture_output) sem abrir console. Nunca usar python.exe (pisca tela).
+PYEXE = r'C:\Users\Pe de Apoio\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe'
 
 def contar_fotos_locais(codigo):
     """Conta fotos ja salvas do produto na pasta local FOTOS_CONC do codigo."""

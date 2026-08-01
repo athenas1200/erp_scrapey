@@ -19,6 +19,7 @@ PY = r'C:\Users\Pe de Apoio\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe'
 INTERVALO = 60            # segundos entre verificacoes
 MEGA_INTERVALO = 1200     # rodar mega_etapa a cada 20 min
 AUTOPUSH_INTERVALO = 1800 # rodar autopush (github) a cada 30 min
+BACKUP_INTERVALO = 7200   # rodar backup_mega a cada 2 horas
 CHECKPOINT = LOGDIR + r'\coleta_estado.json'
 
 def ja_rodando():
@@ -126,6 +127,7 @@ def main():
         log("relatorio restauracao falhou: %s" % str(e)[:120])
     t_mega = time.time()
     t_push = time.time()
+    t_bkp = time.time()
     while True:
         time.sleep(INTERVALO)
         # saude dos servicos -> service_health.json (monitoramento externo)
@@ -137,12 +139,10 @@ def main():
             pass
         # Chrome headless perdido: derruba sempre que estiver aberto ha muito tempo
         matar_chrome_headless_perdido(180)
-        # coletor: religa apenas se houver trabalho pendente (checkpoint existe)
-        # (se o ciclo completou, o checkpoint foi removido e a tarefa das 23h
-        #  recomeca um novo ciclo diario)
-        if os.path.exists(CHECKPOINT):
-            if contar_processos('coletor_lote.py') == 0:
-                iniciar('coletor_lote.py', '0 120')
+        # coletor FASE 1 (mapeamento): religa se houver trabalho pendente
+        if os.path.exists(LOGDIR + r'\mapear_estado.json'):
+            if contar_processos('coletor_mapear.py') == 0:
+                iniciar('coletor_mapear.py', '0')
         # sync silencioso: sempre rodando
         if contar_processos('sync_silencioso.py') == 0:
             iniciar('sync_silencioso.py')
@@ -161,6 +161,11 @@ def main():
         if time.time() - t_push >= AUTOPUSH_INTERVALO:
             t_push = time.time()
             iniciar('autopush.py')
+        # BACKUP MEGA: a cada 2 horas (projeto S9 -> erp_backup)
+        if time.time() - t_bkp >= BACKUP_INTERVALO:
+            t_bkp = time.time()
+            if contar_processos('backup_mega.py') == 0:
+                iniciar('backup_mega.py')
 
 if __name__ == '__main__':
     main()
