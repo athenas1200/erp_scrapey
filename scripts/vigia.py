@@ -152,6 +152,9 @@ def main():
         # S9 MEMORY ENGINE: sempre rodando (aprende o ERP no banco memory_*)
         if contar_processos('memoria_service.py') == 0:
             iniciar('memoria_service.py', '300', subdir='knowledge_base')
+        # S9 MEMORY API: consulta do conhecimento (http://127.0.0.1:8091/?q=pergunta)
+        if contar_processos('memoria_api.py') == 0:
+            iniciar('memoria_api.py', '--http 8091', subdir='knowledge_base')
         # MEGA: periodicamente sobe fotos locais (lote 100)
         if time.time() - t_mega >= MEGA_INTERVALO:
             t_mega = time.time()
