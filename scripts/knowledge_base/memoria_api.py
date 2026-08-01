@@ -173,13 +173,19 @@ class MemoriaAPI:
         return self.q("""SELECT nome, conteudo FROM memory_documents WHERE nome = %s""", (tab,))
 
     def buscar_semantica(self, termos):
-        res = []
-        for t in termos:
-            res += self.q("""SELECT entidade, pergunta, resposta, confianca
-                FROM memory_semantics
-                WHERE entidade ILIKE %s OR pergunta ILIKE %s OR resposta ILIKE %s LIMIT 10""",
-                          ('%' + t + '%', '%' + t + '%', '%' + t + '%'))
-        return self._dedup(res)
+        pool = self.q("""SELECT entidade, pergunta, resposta, confianca
+            FROM memory_semantics""")
+        scored = []
+        for r in pool:
+            pergunta = sem_acentos(r[1] or '').lower()
+            resposta = sem_acentos(r[2] or '').lower()
+            ent = sem_acentos(r[0] or '').lower()
+            s = sum(self._score_nome(r[1] or '', t) for t in termos) * 4
+            s += sum(1 for t in termos if t in resposta)
+            s += sum(self._score_nome(r[0] or '', t) for t in termos)
+            scored.append((s, r))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in scored if _ > 0][:10]
 
     @staticmethod
     def _dedup(res, chave_idx=0):
@@ -203,7 +209,6 @@ class MemoriaAPI:
         ents = self.buscar_entidades(termos)
         regras = self.buscar_regras(termos)
         sem = self.buscar_semantica(termos)
-
         # determina a tabela principal (mais citada / mais importante)
         tab_principal = tabs[0] if tabs else None
 
@@ -211,6 +216,11 @@ class MemoriaAPI:
         docs = self.buscar_documentos(tab_principal[0]) if tab_principal else []
 
         linhas = []
+        if sem:
+            linhas.append("Conhecimento (memoria):")
+            for ent, pergunta, resposta, conf in sem[:5]:
+                linhas.append("- %s -> %s" % (pergunta, resposta))
+            linhas.append("")
         if ents:
             for ent, desc, tabs_princ, conf in ents[:3]:
                 try:

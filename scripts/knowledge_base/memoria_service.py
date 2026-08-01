@@ -459,6 +459,56 @@ def ciclo(ck):
                 VALUES %s ON CONFLICT DO NOTHING""", dd)
         log("documentos: %d gerados" % len(dd))
 
+        # ---- 10. SEMANTICA (pergunta->resposta por entidade/coluna/relacionamento) ----
+        dsem = []
+        if t_mod or n_ciclo % 12 == 0 or not ck_amostradas.get("semantica_feito"):
+            # (a) por entidade: onde fica X, como identificar X
+            mcur.execute("SELECT entidade, descricao, tabelas_principais FROM memory_entities")
+            for ent, desc, tabs in mcur.fetchall():
+                try:
+                    tlista = json.loads(tabs) if isinstance(tabs, str) else (tabs or [])
+                except Exception:
+                    tlista = []
+                t0 = tlista[0] if tlista else ''
+                if t0:
+                    dsem.append((ent, "Onde ficam os dados de %s?" % ent,
+                                 "Tabela principal: %s (entidade: %s)" % (t0, ent),
+                                 0.8, agora))
+                    pks = schema["pk"].get(t0, [])
+                    if pks:
+                        dsem.append((ent, "Como identificar um %s?" % ent,
+                                     "Chave primaria: %s.%s" % (t0, ", ".join(pks)),
+                                     0.8, agora))
+                    dsem.append((ent, "Quais tabelas pertencem a %s?" % ent,
+                                 "Tabelas: %s" % ", ".join(tlista), 0.8, agora))
+            # (b) por coluna-chave de entidade: significado no contexto
+            chaves = ['Codigo', 'Cod', 'Id', 'Numero', 'Nome', 'Descricao', 'Data',
+                      'Total', 'Valor', 'Quantidade', 'Preco', 'Custo']
+            mcur.execute("""SELECT tabela, coluna, significado FROM memory_columns
+                WHERE is_pk = TRUE OR coluna ILIKE ANY(%s)
+                ORDER BY tabela, coluna""",
+                         (["%" + c + "%" for c in chaves],))
+            for tab, col, sign in mcur.fetchall():
+                for ent, desc, tabs in [(None, None, None)]:
+                    pass
+                dsem.append((tab, "O que e a coluna %s.%s?" % (tab, col),
+                             "Significado: %s" % (sign or col), 0.6, agora))
+            # (c) por relacionamento formal: ligacoes semanticas
+            mcur.execute("""SELECT DISTINCT tabela, coluna, ref_tabela FROM memory_relationships
+                WHERE tipo = 'fk' LIMIT 2000""")
+            for tab, col, ref in mcur.fetchall():
+                dsem.append((tab, "O que referencia %s.%s?" % (tab, col),
+                             "Referencia %s (chave estrangeira para %s)" % (ref, ref),
+                             0.7, agora))
+            # grava apenas novos (pergunta unica por entidade)
+            execute_values(mcur, """INSERT INTO memory_semantics
+                (entidade, pergunta, resposta, confianca, descoberto_em)
+                VALUES %s ON CONFLICT DO NOTHING""", dsem)
+            ck_amostradas["semantica_feito"] = 1
+            log("semantica: %d upsert" % len(dsem))
+        else:
+            log("semantica: skip (incremental)")
+
         cm.commit()
     except Exception as e:
         try: cm.rollback()

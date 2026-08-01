@@ -19,7 +19,7 @@ PY = r'C:\Users\Pe de Apoio\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe'
 INTERVALO = 60            # segundos entre verificacoes
 MEGA_INTERVALO = 1200     # rodar mega_etapa a cada 20 min
 AUTOPUSH_INTERVALO = 1800 # rodar autopush (github) a cada 30 min
-BACKUP_INTERVALO = 7200   # rodar backup_mega a cada 2 horas
+BACKUP_INTERVALO = 7200   # rodar backup_mega a cada 2h
 CHECKPOINT = LOGDIR + r'\coleta_estado.json'
 
 def ja_rodando():
@@ -127,6 +127,7 @@ def main():
         log("relatorio restauracao falhou: %s" % str(e)[:120])
     t_mega = time.time()
     t_push = time.time()
+    t_backup = time.time()
     t_bkp = time.time()
     while True:
         time.sleep(INTERVALO)
@@ -164,6 +165,11 @@ def main():
         if time.time() - t_push >= AUTOPUSH_INTERVALO:
             t_push = time.time()
             iniciar('autopush.py')
+        # BACKUP MEGA: compacta o projeto e envia ao MEGA a cada 2h
+        if time.time() - t_backup >= BACKUP_INTERVALO:
+            t_backup = time.time()
+            if contar_processos('backup_mega.py') == 0:
+                iniciar('backup_mega.py')
         # BACKUP MEGA: a cada 2 horas (projeto S9 -> erp_backup)
         if time.time() - t_bkp >= BACKUP_INTERVALO:
             t_bkp = time.time()
