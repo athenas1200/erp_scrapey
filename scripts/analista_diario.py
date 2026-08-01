@@ -21,6 +21,10 @@ MODULOS = [
     ('analista_comercial.py', '30'),
     ('analista_tributario.py', '30'),
     ('analista_auditoria.py', '30'),
+    ('analista_simulacao.py', '30'),
+    ('analista_abc.py', '90'),
+    ('analista_cross.py', '30 20'),
+    ('analista_alertas.py', '30'),
 ]
 
 
