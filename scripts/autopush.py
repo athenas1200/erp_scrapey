@@ -10,7 +10,7 @@ LOGDIR = r'C:\S9\logs'
 os.makedirs(LOGDIR, exist_ok=True)
 LOG = LOGDIR + r'\autopush.log'
 GIT = 'git'
-REPO = 'https://github.com/athenas1200/erp_scrapey.git'
+REPO = 'origin'
 TOKEN = os.environ.get('GH_TOKEN', '')
 
 def log(msg):
