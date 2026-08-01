@@ -37,7 +37,16 @@ scripts/migracao/        mig_data.py (migração auditada)
    para evitar rate limit. Link salvo em `concorrente.foto_mega`.
 6. **Checkpoint persistente** (`logs/coleta_estado.json`): se a máquina reiniciar, volta de
    onde parou. Ao completar ciclo, zera e recomeça (histórico diário).
-7. **Tarefas agendadas**: `S9_Coleta_Precos` (23:00, pythonw silencioso), `S9_Relatorio_Diario` (00:00).
+7. **Watchdog Chrome**: coletor roda uma thread que derruba Chrome **headless** do firecrawl
+   que ficar preso por mais de `CHROME_TIMEOUT` (padrão 120s, 2º arg do script). Nunca mata o
+   Chrome do usuário (filtro: `--headless` OU user-data-dir temporário, excluindo
+   `Google\Chrome\User Data`).
+8. **Fotos → MEGA em lote de 100**: o coletor NUNCA envia direto ao MEGA — só baixa/converta
+   para `FOTOS_CONC\<codigo>\<site>.webp` e grava `foto_local`. O upload é feito
+   separadamente por `mega_etapa.py` (limite padrão **100** por execução, arg 1).
+9. **Tarefas agendadas**: `S9_Coleta_Precos` (23:00, pythonw silencioso), `S9_Relatorio_Diario` (00:00).
+   Para iniciar pythonw em background no Windows: usar `cmd /c` (Start-Process direto com
+   pythonw encerra com exit code 2).
 
 ## Tabela `concorrente` (PostgreSQL)
 Colunas: `id, produto_ordem, produto_codigo, produto_nome, ean, ean3, concorrente,
