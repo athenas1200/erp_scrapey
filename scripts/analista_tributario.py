@@ -80,11 +80,13 @@ def cst_cfop_movimento(cur):
 
 
 def produtos_com_st_sem_cest(cur):
-    """CST de ST mas sem CEST (risco fiscal)."""
+    """CST de ST mas sem CEST (risco fiscal) - na janela de DIAS."""
     cst_list = "', '".join(sorted(CST_COM_CEST))
     cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
         WHERE "ICMS_CST_CSOSN" IN ('%s')
-          AND ("CEST" IS NULL OR "CEST" = '')""" % cst_list)
+          AND ("CEST" IS NULL OR "CEST" = '')
+          AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""" %
+                (cst_list, DIAS))
     return cur.fetchone()[0]
 
 
