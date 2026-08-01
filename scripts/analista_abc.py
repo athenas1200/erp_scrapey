@@ -99,18 +99,28 @@ def main():
         if z:
             linhas.append("Irregulares (Z): " + "; ".join("prod %s CV=%.2f" % (c[0], c[5]) for c in z))
 
-    # grava em memory_products (valores numericos) + memory_business_rules (classificacao)
+    # grava em memory_products (valores numericos + classificacao ABC/XYZ) + memory_business_rules
     tm, lm, cm, mcur = mconnect()
     try:
         rows = []
         for c in classif[:200]:
             prod, vendas, valor, cls, xyz, cv = c
-            rows.append((prod, None, valor, cv, None, None, None, vendas, hoje))
+            rows.append((prod, None, valor, cv, None, None, None, vendas, hoje, cls, xyz))
         if rows:
             execute_values(mcur, """INSERT INTO memory_products
                 (produto_codigo, nome, giro, margem, custo_medio, preco_medio, preco_ideal,
-                 tempo_reposicao, data)
-                VALUES %s ON CONFLICT DO NOTHING""", rows)
+                 tempo_reposicao, data, abc, xyz)
+                VALUES %s ON CONFLICT (produto_codigo) DO UPDATE SET
+                 giro=EXCLUDED.giro, margem=EXCLUDED.margem, tempo_reposicao=EXCLUDED.tempo_reposicao,
+                 data=EXCLUDED.data, abc=EXCLUDED.abc, xyz=EXCLUDED.xyz""", rows)
+        # tabela analise_abc_xyz (consumida pelo extrator do motor de compras)
+        rows_abc = [(str(c[0]), c[3], c[4], c[5], hoje) for c in classif[:500]]
+        if rows_abc:
+            execute_values(mcur, """INSERT INTO analise_abc_xyz
+                (produto_id, curva_abc, curva_xyz, coeficiente_variacao, data_referencia)
+                VALUES %s ON CONFLICT (produto_id, data_referencia) DO UPDATE SET
+                 curva_abc=EXCLUDED.curva_abc, curva_xyz=EXCLUDED.curva_xyz,
+                 coeficiente_variacao=EXCLUDED.coeficiente_variacao""", rows_abc)
         execute_values(mcur, """INSERT INTO memory_business_rules
             (tabela, regra, significado, confianca, descoberto_em) VALUES %s ON CONFLICT DO NOTHING""",
                        [('Prod_Serv', l, 'curva ABC/XYZ', 0.8, hoje) for l in linhas])
