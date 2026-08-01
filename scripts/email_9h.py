@@ -113,6 +113,76 @@ def ler_metricas_hoje():
         return []
 
 
+def ler_json(path):
+    try:
+        return json.load(io.open(path, encoding='utf-8'))
+    except Exception:
+        return None
+
+
+def ultima_linha_log(path):
+    try:
+        with io.open(path, encoding='utf-8', errors='ignore') as f:
+            linhas = f.read().strip().splitlines()
+        return linhas[-1] if linhas else ''
+    except Exception:
+        return ''
+
+
+def metricas_automaticas():
+    """Metricas geradas automaticamente a partir do estado real dos servicos
+    (heartbeats, checkpoints, logs). Nao depende de registro manual."""
+    hoje = time.strftime('%Y-%m-%d')
+    hoje0 = hoje + ' 00:00:00'
+    met = []
+
+    # --- memoria ---
+    hb = ler_json(r'C:\S9\logs\heartbeat_memoria.json') or {}
+    ciclo = hb.get('ciclo', 0)
+    if ciclo:
+        met.append("Memoria: ciclo %s executado (%s)" % (ciclo, hb.get('horario', '')))
+
+    # --- sync ---
+    hbs = ler_json(r'C:\S9\logs\heartbeat_sync.json') or {}
+    if hbs.get('ciclo_concluido'):
+        met.append("Sync: ultimo ciclo concluido as %s" % hbs.get('ciclo_concluido'))
+
+    # --- coletor ---
+    hbc = ler_json(r'C:\S9\logs\heartbeat_coletor.json') or {}
+    if hbc.get('status') == 'processando':
+        met.append("Coletor: %s produtos processados no ciclo (ultimo: %s)" %
+                   (hbc.get('feitos', 0), hbc.get('produto_atual', '')))
+    elif hbc.get('status'):
+        met.append("Coletor: %s" % hbc.get('status'))
+
+    # --- fotos / mega ---
+    m = ultima_linha_log(r'C:\S9\logs\mega_%s.log' % time.strftime('%Y%m%d'))
+    if not m:
+        import glob
+        logs = sorted(glob.glob(r'C:\S9\logs\mega_*.log'), key=lambda p: -os.path.getmtime(p))
+        if logs:
+            m = ultima_linha_log(logs[0])
+    if m:
+        met.append("MEGA/fotos: %s" % m.strip())
+
+    # --- backup ---
+    b = ultima_linha_log(r'C:\S9\logs\backup.log')
+    if b:
+        met.append("Backup MEGA: %s" % b.strip())
+
+    # --- autopush ---
+    a = ultima_linha_log(r'C:\S9\logs\autopush.log')
+    if a:
+        met.append("GitHub: %s" % a.strip())
+
+    # --- API memoria ---
+    ap = ultima_linha_log(r'C:\S9\logs\memoria_api.log')
+    if ap:
+        met.append("API memoria: %s" % ap.strip())
+
+    return met
+
+
 def montar_html(mov, metricas, hoje):
     sec_mov = ""
     if mov:
@@ -184,11 +254,16 @@ def main():
         log("Configuracao de email incompleta")
         return 1
     mov = coletar_movimentacao_hoje()
-    metricas = ler_metricas_hoje()
+    metricas_auto = metricas_automaticas()
+    metricas_manual = ler_metricas_hoje()
+    metricas = metricas_auto + metricas_manual
+    if not metricas:
+        metricas = ["Nenhuma metrica registrada no dia."]
     html = montar_html(mov, metricas, hoje)
     texto = montar_texto(mov, metricas, hoje)
     enviar(cfg, html, texto, hoje)
-    log("Email 9h enviado - tabelas=%d metricas=%d" % (len(mov), len(metricas)))
+    log("Email 9h enviado - tabelas=%d metricas=%d (auto=%d manual=%d)" %
+        (len(mov), len(metricas), len(metricas_auto), len(metricas_manual)))
     return 0
 
 
