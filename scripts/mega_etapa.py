@@ -23,7 +23,8 @@ def ja_rodando():
         if pid == os.getpid():
             return False
         out = subprocess.run(['tasklist', '/FI', 'PID eq %d' % pid],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         return str(pid) in out.stdout
     except Exception:
         return False
@@ -87,7 +88,8 @@ def main():
         nome = '%s_%s.webp' % (codigo, conc or 'conc')
         r = subprocess.run([sys.executable, os.path.join(BASE, 'mega_upload_img.py'),
                             foto_local, nome], capture_output=True, text=True,
-                           timeout=180, cwd=BASE)
+                           timeout=180, cwd=BASE,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         link = (r.stdout or '').strip()
         if link and link.startswith('http'):
             tunnel, local = sync.open_tunnel()

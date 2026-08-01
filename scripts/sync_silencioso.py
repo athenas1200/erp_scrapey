@@ -22,6 +22,18 @@ BATCH = 2000
 
 os.makedirs(LOGDIR, exist_ok=True)
 
+HB = LOGDIR + r'\heartbeat_sync.json'
+
+def heartbeat(status='ok', extra=None):
+    hb = {"servico": "sync", "status": status,
+          "horario": time.strftime('%Y-%m-%d %H:%M:%S')}
+    if extra:
+        hb.update(extra)
+    try:
+        io.open(HB, 'w', encoding='utf-8').write(json.dumps(hb, ensure_ascii=False, indent=1))
+    except Exception:
+        pass
+
 cat = json.load(io.open(BASE + r'\mig_cat.json', encoding='utf-8'))
 rows = json.load(io.open(BASE + r'\sql_rowcounts.json', encoding='utf-8'))
 tabelas = [t for t in cat if cat.get(t) != 'skip' and rows.get(t, 0) > 0
@@ -242,6 +254,7 @@ def main():
     log.write("=== SYNC SILENCIOSO INICIADO %s ===\n" % time.strftime('%Y-%m-%d %H:%M:%S'))
     log.flush()
     jlog({'tipo': 'inicio', 'msg': 'sincronizador iniciado'})
+    heartbeat('online', {"msg": "sincronizador iniciado"})
     while True:
         try:
             sconn = pyodbc.connect(SQL_DSN, timeout=30)
@@ -265,9 +278,11 @@ def main():
             pconn.commit()
             pconn.close(); sconn.close(); tunnel.close(); local.close()
             jlog({'tipo': 'ciclo', 'msg': 'ciclo concluido'})
+            heartbeat('ok', {"ciclo_concluido": time.strftime('%H:%M:%S')})
         except Exception as e:
             log.write("[%s] ERRO CICLO: %s\n" % (time.strftime('%H:%M:%S'), str(e)[:200])); log.flush()
             jlog({'tipo': 'erro', 'msg': 'erro no ciclo: ' + str(e)[:300]})
+            heartbeat('erro', {"ultimo_erro": str(e)[:300]})
         time.sleep(INTERVAL)
 
 if __name__ == '__main__':

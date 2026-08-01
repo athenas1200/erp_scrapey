@@ -100,7 +100,8 @@ asyncio.run(main())
 """
     try:
         r = subprocess.run([sys.executable, '-c', script, query], capture_output=True,
-                           text=True, timeout=120, cwd=BASE)
+                           text=True, timeout=120, cwd=BASE,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if r.returncode != 0:
             return None
         out = r.stdout.strip().split('\n')[-1]

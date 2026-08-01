@@ -30,7 +30,8 @@ def ja_rodando():
         if pid == os.getpid():
             return False
         out = subprocess.run(['tasklist', '/FI', 'PID eq %d' % pid],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         return str(pid) in out.stdout
     except Exception:
         return False
@@ -55,21 +56,22 @@ def contar_processos(nome_script):
               "Where-Object { $_.ProcessId -ne $me -and $_.CommandLine -notmatch 'vigia.py' -and "
               "$_.CommandLine -match '%s' } | Measure-Object" % (me, nome_script))
         out = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         m = re.search(r'Count\s*:\s*(\d+)', out.stdout)
         return int(m.group(1)) if m else 0
     except Exception:
         return -1
 
-def iniciar(nome_script, args=''):
-    """Inicia um script em background (via cmd /c, pois Start-Process direto
-    com pythonw morre com exit code 2)."""
+def iniciar(nome_script, args='', subdir=None):
+    """Inicia um script em background de forma totalmente silenciosa.
+    Usa subprocess.Popen com pythonw + CREATE_NO_WINDOW (nunca abre janela/cmd piscando)."""
     try:
-        cmd = '"%s" "%s\\%s"' % (PY, BASE, nome_script)
+        caminho = os.path.join(BASE, nome_script) if subdir is None else os.path.join(BASE, subdir, nome_script)
+        cmd = [PY, caminho]
         if args:
-            cmd += ' ' + args
-        subprocess.Popen(['cmd', '/c', cmd],
-                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            cmd += args.split()
+        subprocess.Popen(cmd, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         log("iniciado: %s %s" % (nome_script, args))
         return True
     except Exception as e:
@@ -88,7 +90,8 @@ def matar_chrome_headless_perdido(segundos_max=180):
             "Select-Object ProcessId, CreationDate"
         )
         out = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, timeout=30,
+                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         agora = time.time()
         for linha in out.stdout.splitlines():
             partes = linha.split()
@@ -101,7 +104,8 @@ def matar_chrome_headless_perdido(segundos_max=180):
                 idade = agora - dt.timestamp()
                 if idade > segundos_max:
                     subprocess.run(['taskkill', '/F', '/T', '/PID', pid],
-                                   capture_output=True, text=True, timeout=30)
+                                   capture_output=True, text=True, timeout=30,
+                                   creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
                     log("watchdog: Chrome headless PID %s aberto ha %.0fs > %ds - derrubado" %
                         (pid, idade, segundos_max))
             except Exception:
@@ -111,10 +115,26 @@ def matar_chrome_headless_perdido(segundos_max=180):
 
 def main():
     log("VIGIA iniciado. intervalo=%ds" % INTERVALO)
+    # relatorio de restauracao apos boot
+    try:
+        import sys
+        sys.path.insert(0, os.path.join(BASE, 'knowledge_base'))
+        import health
+        r = health.relatorio_restauracao()
+        log("restauracao: %s" % r.get("acao"))
+    except Exception as e:
+        log("relatorio restauracao falhou: %s" % str(e)[:120])
     t_mega = time.time()
     t_push = time.time()
     while True:
         time.sleep(INTERVALO)
+        # saude dos servicos -> service_health.json (monitoramento externo)
+        try:
+            sys.path.insert(0, os.path.join(BASE, 'knowledge_base'))
+            import health
+            health.coletar()
+        except Exception:
+            pass
         # Chrome headless perdido: derruba sempre que estiver aberto ha muito tempo
         matar_chrome_headless_perdido(180)
         # coletor: religa apenas se houver trabalho pendente (checkpoint existe)
@@ -129,6 +149,9 @@ def main():
         # tela web: sempre rodando
         if contar_processos('tela_log_server.py') == 0:
             iniciar('tela_log_server.py')
+        # S9 MEMORY ENGINE: sempre rodando (aprende o ERP no banco memory_*)
+        if contar_processos('memoria_service.py') == 0:
+            iniciar('memoria_service.py', '300', subdir='knowledge_base')
         # MEGA: periodicamente sobe fotos locais (lote 100)
         if time.time() - t_mega >= MEGA_INTERVALO:
             t_mega = time.time()
