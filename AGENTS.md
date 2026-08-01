@@ -47,6 +47,34 @@ scripts/migracao/        mig_data.py (migração auditada)
 9. **Tarefas agendadas**: `S9_Coleta_Precos` (23:00, pythonw silencioso), `S9_Relatorio_Diario` (00:00).
    Para iniciar pythonw em background no Windows: usar `cmd /c` (Start-Process direto com
    pythonw encerra com exit code 2).
+10. **VIGIA (supervisor autônomo)**: `C:\S9\vigia.py` roda o tempo todo e religa
+    coletor/sync/tela automaticamente se caírem. Roda na inicialização do Windows via
+    atalho `S9_Vigia.lnk` na pasta de Inicialização (aponta para `C:\S9\logs\rodar_vigia.cmd`).
+    Se a máquina reiniciar, ele volta sozinho — sem interferência humana.
+11. **AUTOPUSH GitHub**: `C:\S9\autopush.py` (rodado pelo vigia a cada 30 min) copia os
+    scripts de `C:\S9` para o repositório e faz `git add/commit/push` automaticamente.
+    Envia ao GitHub tudo que mudou, sem intervenção.
+12. **EMAIL HORÁRIO**: `C:\S9\email_horario.py` envia a cada 1h (via vigia) um relatório
+    com resumo por concorrente (produtos extraídos) + produtos com até 5 concorrentes +
+    modificações de dados. `--auto` para uso agendado (não loga no console).
+13. **EMAIL CONCORRENTE**: `C:\S9\email_concorrente.py` envia sob demanda (1x/dia, 21h)
+    o que foi coletado hoje na tabela concorrente.
+
+## LOCAL DE PRODUÇÃO: C:\S9
+Todo o sistema roda a partir de **C:\S9** (NÃO do Temp do opencode). Estrutura:
+```
+C:\S9\  scripts de produção (vigia.py, coletor_lote.py, sync_silencioso.py,
+        tela_log_server.py, mega_etapa.py, mega_upload_img.py, autopush.py,
+        email_horario.py, email_concorrente.py, email_diario.py, firecrawl_batch.py,
+        fotos_webp.py, coletor_precos.py, email_config.json, mig_cat.json,
+        sql_rowcounts.json)
+C:\S9\logs\    rodar_vigia.cmd, rodar_sync.cmd, rodar_coletor.cmd,
+        rodar_email_diario.cmd, *.log, checkpoints (*.json)
+C:\S9\FOTOS_CONC\<codigo>\  fotos .webp baixadas
+```
+- Inicialização do Windows: atalho `S9_Vigia.lnk` → `C:\S9\logs\rodar_vigia.cmd`.
+- Tarefas agendadas: `S9_Coleta_Precos` → `rodar_coletor.cmd`, `S9_Relatorio_Diario` → `rodar_email_diario.cmd`.
+- O repositório GitHub é uma cópia de backup; o código-fonte de execução é o C:\S9.
 
 ## Tabela `concorrente` (PostgreSQL)
 Colunas: `id, produto_ordem, produto_codigo, produto_nome, ean, ean3, concorrente,
@@ -70,4 +98,5 @@ foto_mega, disponivel, data_coleta, data_preco`.
 - SQL Server limita 2100 parâmetros por consulta.
 - Nomes de coluna PG > 63 chars são truncados.
 - Python 3.14: `tenacity` quebrado em versão nova — fix com `tenacity==8.2.3`.
-- Arquivos de trabalho em `C:\Users\Pe de Apoio\AppData\Local\Temp\opencode\`.
+- Arquivos de produção em `C:\S9\` (histórico/trabalho antigo em `C:\Users\Pe de Apoio\AppData\Local\Temp\opencode\`).
+- Para iniciar pythonw oculto: `cmd /c "C:\...\pythonw.exe" "C:\S9\script.py"` (nunca Start-Process direto com pythonw).
