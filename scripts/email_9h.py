@@ -113,6 +113,15 @@ def ler_metricas_hoje():
         return []
 
 
+def relatorio_do_dia():
+    """Caminho do relatorio completo do analista de hoje (se existir)."""
+    for dia in (time.strftime('%Y-%m-%d'),):
+        p = os.path.join(LOGDIR, 'relatorio_analista_%s.md' % dia)
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def ler_json(path):
     try:
         return json.load(io.open(path, encoding='utf-8'))
@@ -233,13 +242,21 @@ def montar_texto(mov, metricas, hoje):
     return "\n".join(txt)
 
 
-def enviar(cfg, html, texto, hoje):
+def enviar(cfg, html, texto, hoje, anexo=None):
     msg = MIMEMultipart('alternative')
     msg['From'] = formataddr(('Resumo S9', cfg['remetente']))
     msg['To'] = cfg['destinatario']
     msg['Subject'] = 'Resumo S9 - %s' % hoje
     msg.attach(MIMEText(texto, 'plain', 'utf-8'))
     msg.attach(MIMEText(html, 'html', 'utf-8'))
+    if anexo and os.path.exists(anexo):
+        from email.mime.base import MIMEBase
+        from email import encoders
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(io.open(anexo, 'rb').read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="%s"' % os.path.basename(anexo))
+        msg.attach(part)
     s = smtplib.SMTP(cfg['smtp_host'], int(cfg['smtp_port']), timeout=60)
     s.starttls()
     s.login(cfg['remetente'], cfg['senha_app'])
@@ -261,9 +278,10 @@ def main():
         metricas = ["Nenhuma metrica registrada no dia."]
     html = montar_html(mov, metricas, hoje)
     texto = montar_texto(mov, metricas, hoje)
-    enviar(cfg, html, texto, hoje)
-    log("Email 9h enviado - tabelas=%d metricas=%d (auto=%d manual=%d)" %
-        (len(mov), len(metricas), len(metricas_auto), len(metricas_manual)))
+    anexo = relatorio_do_dia()
+    enviar(cfg, html, texto, hoje, anexo)
+    log("Email 9h enviado - tabelas=%d metricas=%d (auto=%d manual=%d) anexo=%s" %
+        (len(mov), len(metricas), len(metricas_auto), len(metricas_manual), os.path.basename(anexo) if anexo else 'nenhum'))
     return 0
 
 
