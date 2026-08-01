@@ -6,7 +6,7 @@ Uso: python mega_etapa.py [limite]
 """
 import os, sys, io, json, time, subprocess, glob
 
-LIMITE = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+LIMITE = int(sys.argv[1]) if len(sys.argv) > 1 else 100
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = BASE + r'\logs'
 os.makedirs(LOGDIR, exist_ok=True)

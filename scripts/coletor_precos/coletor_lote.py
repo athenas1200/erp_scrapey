@@ -6,9 +6,11 @@ preco, faz fallback no Google (busca geral). Grava na tabela 'concorrente' do PG
 - Rate limit: backoff (espera 60s em erro 429) e pausa entre chamadas
 - Log de progresso em logs/coleta_AAAAMMDD_HHMMSS.log
 """
-import os, sys, io, json, time, re, subprocess, glob
+import os, sys, io, json, time, re, subprocess, glob, threading
 
 LOTE = int(sys.argv[1]) if len(sys.argv) > 1 else 0   # 0 = todos
+# tempo max (s) que um Chrome headless do firecrawl pode ficar preso antes de ser derrubado
+CHROME_TIMEOUT = int(sys.argv[2]) if len(sys.argv) > 2 else 120
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = BASE + r'\logs'
 os.makedirs(LOGDIR, exist_ok=True)
@@ -298,6 +300,45 @@ def baixar_foto(url_img, destino):
     except Exception:
         return False
 
+def matar_chrome_headless_travado(segundos_max=CHROME_TIMEOUT):
+    """Derruba Chrome headless do firecrawl que ficou preso por mais de X segundos.
+    Soh mata processos chrome.exe com '--headless' OU user-data-dir temporario
+    (nunca o Chrome normal do usuario, que roda com 'Google\\Chrome\\User Data')."""
+    try:
+        ps = (
+            "Get-CimInstance Win32_Process -Filter \"Name='chrome.exe'\" | "
+            "Where-Object { $_.CommandLine -match 'headless' -or "
+            "($_.CommandLine -match 'user-data-dir' -and $_.CommandLine -notmatch 'Google\\\\Chrome\\\\User Data') } | "
+            "Select-Object ProcessId, CreationDate"
+        )
+        out = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
+                             capture_output=True, text=True, timeout=30)
+        agora = time.time()
+        for linha in out.stdout.splitlines():
+            partes = linha.split()
+            if len(partes) < 2:
+                continue
+            pid = partes[0]
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(partes[1] + ' ' + partes[2], '%m/%d/%Y %H:%M:%S')
+                idade = agora - dt.timestamp()
+                if idade > segundos_max:
+                    subprocess.run(['taskkill', '/F', '/T', '/PID', pid],
+                                   capture_output=True, text=True, timeout=30)
+                    log("  watchdog: Chrome headless PID %s preso a %.0fs > %ds - derrubado" %
+                        (pid, idade, segundos_max))
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def watchdog_chrome(intervalo=20):
+    """Thread que verifica periodicamente Chrome headless travado."""
+    while True:
+        time.sleep(intervalo)
+        matar_chrome_headless_travado()
+
 def main():
     import pyodbc, psycopg2
     hoje = time.strftime('%Y-%m-%d')
@@ -470,4 +511,5 @@ def main():
         (n_novo, n_total, (time.time() - t0) / 60))
 
 if __name__ == '__main__':
+    threading.Thread(target=watchdog_chrome, daemon=True).start()
     main()
