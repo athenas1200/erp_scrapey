@@ -36,9 +36,17 @@ def _num(v):
 
 
 # ---------------- consultas na replica (somente leitura) ----------------
+# filtro multi-tenant (varias empresas no mesmo banco) - vazio se inativo
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')   # aplica no campo filial/empresa
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (seguro, valor interno)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
 def top_produtos(cur):
     """Produtos com maior faturamento, margem, giro e descontos."""
-    cur.execute("""SELECT
+    cur.execute(_sql("""SELECT
         COALESCE("Ordem_Prod_Serv",0)::text AS produto,
         COUNT(*) AS vendas,
         COALESCE(SUM("Preco_Total_Com_Desconto"),0) AS faturamento,
@@ -50,47 +58,52 @@ def top_produtos(cur):
         COALESCE(SUM("Preco_Custo"*1),0) AS custo
         FROM "Movimento_Prod_Serv"
         WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
+        __TENANT__
         GROUP BY "Ordem_Prod_Serv"
-        ORDER BY faturamento DESC LIMIT 20""", (DIAS,))
+        ORDER BY faturamento DESC LIMIT 20"""), (DIAS,))
     return cur.fetchall()
 
 
 def ranking_clientes(cur):
     """Ranking de clientes por faturamento (via Movimento x Cli_For)."""
-    cur.execute("""SELECT
+    cur.execute(_sql("""SELECT
         COALESCE("Ordem_Cli_For",0)::text AS cliente, COUNT(*) AS pedidos,
         COALESCE(SUM("Preco_Total_Com_Desconto_Somado"),0) AS valor
         FROM "Movimento"
         WHERE "Data" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-        GROUP BY "Ordem_Cli_For" ORDER BY valor DESC LIMIT 15""", (DIAS,))
+        __TENANT__
+        GROUP BY "Ordem_Cli_For" ORDER BY valor DESC LIMIT 15"""), (DIAS,))
     return cur.fetchall()
 
 
 def ranking_vendedores(cur):
-    cur.execute("""SELECT
+    cur.execute(_sql("""SELECT
         COALESCE("Ordem_Vendedor1",0)::text AS vendedor, COUNT(*) AS pedidos,
         COALESCE(SUM("Preco_Total_Com_Desconto_Somado"),0) AS valor
         FROM "Movimento"
         WHERE "Data" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-        GROUP BY "Ordem_Vendedor1" ORDER BY valor DESC LIMIT 15""", (DIAS,))
+        __TENANT__
+        GROUP BY "Ordem_Vendedor1" ORDER BY valor DESC LIMIT 15"""), (DIAS,))
     return cur.fetchall()
 
 
 def produtos_sem_giro(cur):
     """Produtos cadastrados sem venda na janela (encalhados)."""
-    cur.execute("""SELECT COUNT(*) FROM "Prod_Serv" p
+    cur.execute(_sql("""SELECT COUNT(*) FROM "Prod_Serv" p
         WHERE NOT EXISTS (SELECT 1 FROM "Movimento_Prod_Serv" m
             WHERE m."Ordem_Prod_Serv" = p."Ordem"
-              AND m."Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s))""", (DIAS,))
+              AND m."Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s))
+        __TENANT__"""), (DIAS,))
     return cur.fetchone()[0]
 
 
 def tendencia_vendas(cur):
     """Vendas por dia na janela (para tendencias)."""
-    cur.execute("""SELECT "Data"::date AS dia, COUNT(*), COALESCE(SUM("Preco_Total_Com_Desconto_Somado"),0)
+    cur.execute(_sql("""SELECT "Data"::date AS dia, COUNT(*), COALESCE(SUM("Preco_Total_Com_Desconto_Somado"),0)
         FROM "Movimento"
         WHERE "Data" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-        GROUP BY dia ORDER BY dia""", (DIAS,))
+        __TENANT__
+        GROUP BY dia ORDER BY dia"""), (DIAS,))
     return cur.fetchall()
 
 
