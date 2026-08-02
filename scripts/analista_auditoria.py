@@ -11,6 +11,15 @@ Modo leitura apenas. Uso: python analista_auditoria.py [dias]
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -44,9 +53,10 @@ def margem_negativa(cur):
         COALESCE(SUM("Preco_Total_Com_Desconto") - SUM("Preco_Custo"),0)
         FROM "Movimento_Prod_Serv"
         WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
+        __TENANT__
           AND "Preco_Custo" > 0
           AND "Preco_Total_Com_Desconto" < "Preco_Custo"
-          AND "Preco_Total_Com_Desconto" > 0""", (DIAS,))
+          AND "Preco_Total_Com_Desconto" > 0""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchone()
 
 
@@ -54,7 +64,8 @@ def desconto_excessivo(cur):
     """Itens com desconto acima de 20%."""
     cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
         WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-          AND "Desconto_Percentual" > 20""", (DIAS,))
+        __TENANT__
+          AND "Desconto_Percentual" > 20""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchone()[0]
 
 
@@ -75,7 +86,7 @@ def movimentos_invalidos(cur):
         COUNT(CASE WHEN "Ordem_Operacao" IS NULL OR "Ordem_Operacao" = 0 THEN 1 END),
         COUNT(CASE WHEN "Ordem_Cli_For" IS NULL OR "Ordem_Cli_For" = 0 THEN 1 END)
         FROM "Movimento"
-        WHERE "Data" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+        WHERE "Data" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchone()
 
 
@@ -92,7 +103,8 @@ def descontos_por_vendedor(cur):
     cur.execute("""SELECT COALESCE(m."Ordem_Vendedor1",0)::text, COALESCE(AVG(m."Desconto_Valor_Somado"),0), COUNT(*)
         FROM "Movimento" m
         WHERE m."Data" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-        GROUP BY m."Ordem_Vendedor1" ORDER BY COALESCE(AVG(m."Desconto_Valor_Somado"),0) DESC LIMIT 10""", (DIAS,))
+        __TENANT__
+        GROUP BY m."Ordem_Vendedor1" ORDER BY COALESCE(AVG(m."Desconto_Valor_Somado"),0) DESC LIMIT 10""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchall()
 
 

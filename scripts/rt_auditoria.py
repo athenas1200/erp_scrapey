@@ -12,6 +12,15 @@ Modo leitura apenas na replica. Uso: python rt_auditoria.py [dias]
 import sys, io, os, json, time
 from datetime import date
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -47,21 +56,21 @@ def main():
         # 1. itens sem NCM na janela
         cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE ("NCM" IS NULL OR "NCM" = '')
-              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         achados.append(("itens de movimento sem NCM", cur.fetchone()[0], "alta"))
 
         # 2. ST sem CEST (risco)
         cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE "ICMS_CST_CSOSN" IN ('10','30','70','90')
               AND ("CEST" IS NULL OR "CEST" = '')
-              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         achados.append(("itens com CST de substituicao sem CEST", cur.fetchone()[0], "alta"))
 
         # 3. CBS/IBS registrados vs soma de impostos atuais
         cur.execute("""SELECT COALESCE(SUM("CBS_Valor"),0), COALESCE(SUM("IBS_Valor"),0),
             COALESCE(SUM("ICMS_Normal_Valor")+SUM("PIS_Normal_Valor")+SUM("COFINS_Normal_Valor"),0)
             FROM "Movimento_Prod_Serv"
-            WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+            WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         cbs, ibs, atuais = cur.fetchone()
         achados.append(("CBS registrada no ERP (R$)", round(_num(cbs), 2), "media"))
         achados.append(("IBS registrada no ERP (R$)", round(_num(ibs), 2), "media"))
@@ -71,7 +80,7 @@ def main():
         cur.execute("""SELECT "NCM", COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE "NCM" IS NOT NULL AND "NCM" <> ''
               AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-            GROUP BY "NCM" ORDER BY COUNT(*) DESC LIMIT 10""", (DIAS,))
+            GROUP BY "NCM" ORDER BY COUNT(*) DESC LIMIT 10""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         top_ncm = cur.fetchall()
     finally:
         close_all(tr, lr, cr)

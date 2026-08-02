@@ -7,6 +7,15 @@ Modo leitura apenas. Uso: python analista_alertas.py [dias]
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -46,7 +55,7 @@ def main():
         # 1. ST sem CEST (risco fiscal alto)
         cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE "ICMS_CST_CSOSN" IN ('10','30','70','90') AND ("CEST" IS NULL OR "CEST" = '')
-              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         n = cur.fetchone()[0]
         if n:
             alertas.append(("ALTA", "Substituicao tributaria sem CEST", "%d itens com CST 10/30/70/90 sem CEST" % n,
@@ -56,7 +65,7 @@ def main():
         cur.execute("""SELECT COUNT(*), COALESCE(SUM("Preco_Total_Com_Desconto" - "Preco_Custo"),0)
             FROM "Movimento_Prod_Serv"
             WHERE "Preco_Custo" > 0 AND "Preco_Total_Com_Desconto" < "Preco_Custo"
-              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         n, prej = cur.fetchone()
         if n:
             alertas.append(("ALTA", "Vendas abaixo do custo", "%d itens, prejuizo R$ %.2f" % (n, _num(prej)),
@@ -65,7 +74,7 @@ def main():
         # 3. desconto excessivo (> 20%)
         cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE "Desconto_Percentual" > 20
-              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         n = cur.fetchone()[0]
         if n:
             alertas.append(("MEDIA", "Descontos excessivos", "%d itens com desconto > 20%%" % n,
@@ -83,7 +92,7 @@ def main():
         # 5. aliquotas ICMS anormais
         cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE ("ICMS_Normal_Percentual" > 20 OR "ICMS_Normal_Percentual" < 0)
-              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+              AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         n = cur.fetchone()[0]
         if n:
             alertas.append(("MEDIA", "Aliquotas ICMS fora do padrao", "%d itens >20%% ou negativas" % n,
@@ -105,7 +114,8 @@ def main():
     try:
         cur2.execute("""SELECT "NCM", COUNT(*) FROM "Movimento_Prod_Serv"
             WHERE "NCM" IS NOT NULL AND "NCM"<>'' AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-            GROUP BY 1 ORDER BY 2 DESC LIMIT 10""", (DIAS,))
+        __TENANT__
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 10""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         top_ncm = cur2.fetchall()
     finally:
         close_all(tr2, lr2, cr2)

@@ -6,6 +6,15 @@ Modo leitura apenas. Uso: python analista_cross.py [dias] [limite_pares]
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -44,12 +53,13 @@ def main():
             JOIN "Movimento_Prod_Serv" b ON a."Ordem_Movimento" = b."Ordem_Movimento"
                 AND a."Ordem_Prod_Serv" < b."Ordem_Prod_Serv"
             WHERE a."Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-            GROUP BY 1, 2 ORDER BY juntos DESC LIMIT %s""", (DIAS, LIMITE))
+        __TENANT__
+            GROUP BY 1, 2 ORDER BY juntos DESC LIMIT %s""".replace('__TENANT__', TENANT_WHERE), (DIAS, LIMITE))
         pares = cur.fetchall()
         # total de vendas para calcular o lift
         cur.execute("""SELECT COUNT(*) FROM (
             SELECT DISTINCT "Ordem_Movimento" FROM "Movimento_Prod_Serv"
-            WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)) t""", (DIAS,))
+            WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)) t""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         n_vendas = cur.fetchone()[0] or 1
     finally:
         close_all(tr, lr, cr)

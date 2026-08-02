@@ -9,6 +9,15 @@ Modo leitura apenas. Uso: python analista_simulacao.py [dias]
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -68,7 +77,7 @@ def simular_por_item(cur):
         COALESCE(AVG("IBS_Valor"),0) AS ibs_valor,
         COUNT(*) AS n
         FROM "Movimento_Prod_Serv"
-        WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+        WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchone()
 
 

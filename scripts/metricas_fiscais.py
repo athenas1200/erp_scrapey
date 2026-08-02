@@ -17,6 +17,15 @@ Agendado pelo vigia a cada 6h.
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -77,7 +86,7 @@ def agregar_movimento(cur):
       FROM "Movimento_Prod_Serv"
       WHERE "Data_Efetivacao_Estoque" >= (CURRENT_TIMESTAMP - make_interval(days => %s))
         AND ("Preco_Total_Sem_Desconto" IS NOT NULL OR "ICMS_Normal_Valor" IS NOT NULL OR "ICMS_Subst_Valor" IS NOT NULL)
-    """, (DIAS,))
+    """.replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchone()
 
 

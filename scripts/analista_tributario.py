@@ -15,6 +15,15 @@ Modo leitura apenas. Uso: python analista_tributario.py [dias]
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -52,8 +61,7 @@ def ncm_produtos(cur):
         GROUP BY "NCM" HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 15""")
     duplicados = cur.fetchall()
     cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
-        WHERE ("NCM" IS NULL OR "NCM" = '') AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""",
-                (DIAS,))
+        WHERE ("NCM" IS NULL OR "NCM" = '') AND "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     sem_ncm = cur.fetchone()[0]
     cur.execute("""SELECT COUNT(DISTINCT "NCM") FROM "Movimento_Prod_Serv"
         WHERE "NCM" IS NOT NULL AND "NCM" <> ''""")
@@ -69,12 +77,14 @@ def cst_cfop_movimento(cur):
         COALESCE(AVG("COFINS_Normal_Percentual"),0)
         FROM "Movimento_Prod_Serv"
         WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-        GROUP BY "ICMS_CST_CSOSN" ORDER BY COUNT(*) DESC LIMIT 20""", (DIAS,))
+        __TENANT__
+        GROUP BY "ICMS_CST_CSOSN" ORDER BY COUNT(*) DESC LIMIT 20""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     cst = cur.fetchall()
     cur.execute("""SELECT "CFOP_NF", COUNT(*) FROM "Movimento_Prod_Serv"
         WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
+        __TENANT__
           AND "CFOP_NF" IS NOT NULL AND "CFOP_NF" <> ''
-        GROUP BY "CFOP_NF" ORDER BY COUNT(*) DESC LIMIT 15""", (DIAS,))
+        GROUP BY "CFOP_NF" ORDER BY COUNT(*) DESC LIMIT 15""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     cfop = cur.fetchall()
     return cst, cfop
 
@@ -99,7 +109,7 @@ def impacto_cbs_ibs(cur):
         COALESCE(SUM("IBS_Valor"),0) AS ibs,
         COALESCE(SUM("Preco_Total_Sem_Desconto"),0) AS base
         FROM "Movimento_Prod_Serv"
-        WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+        WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return cur.fetchone()
 
 
@@ -107,11 +117,12 @@ def aliquotas_produto(cur):
     """Produtos com aliquota ICMS acima do padrao (anomalia)."""
     cur.execute("""SELECT COUNT(*) FROM "Movimento_Prod_Serv"
         WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-          AND ("ICMS_Normal_Percentual" > 20 OR "ICMS_Normal_Percentual" < 0)""", (DIAS,))
+        __TENANT__
+          AND ("ICMS_Normal_Percentual" > 20 OR "ICMS_Normal_Percentual" < 0)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     anomalia = cur.fetchone()[0]
     cur.execute("""SELECT COALESCE(AVG("ICMS_Normal_Percentual"),0),
         COALESCE(AVG("ICMS_Subst_Percentual"),0) FROM "Movimento_Prod_Serv"
-        WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""", (DIAS,))
+        WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
     return anomalia, cur.fetchone()
 
 

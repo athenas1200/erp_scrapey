@@ -7,6 +7,15 @@ Modo leitura apenas. Uso: python analista_abc.py [dias]
 """
 import sys, io, os, json, time
 
+# ---- filtro multi-tenant (varias empresas no mesmo banco) ----
+import tenant as _tenant
+TENANT_WHERE = _tenant.where('Ordem_Filial')
+
+def _sql(consulta):
+    """Substitui o marcador __TENANT__ pela clausula de tenant (valor interno seguro)."""
+    return consulta.replace('__TENANT__', TENANT_WHERE)
+
+
 sys.path.insert(0, r'C:\S9\knowledge_base')
 BASE = os.path.dirname(os.path.abspath(__file__))
 LOGDIR = r'C:\S9\logs'
@@ -48,14 +57,16 @@ def main():
             COALESCE(SUM("Preco_Total_Sem_Desconto"),0)
             FROM "Movimento_Prod_Serv"
             WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-            GROUP BY "Ordem_Prod_Serv" ORDER BY 3 DESC""", (DIAS,))
+        __TENANT__
+            GROUP BY "Ordem_Prod_Serv" ORDER BY 3 DESC""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         produtos = cur.fetchall()
         # vendas por produto por semana (para XYZ)
         cur.execute("""SELECT COALESCE("Ordem_Prod_Serv",0)::text,
             date_trunc('week', "Data_Efetivacao_Estoque")::date, COUNT(*)
             FROM "Movimento_Prod_Serv"
             WHERE "Data_Efetivacao_Estoque" >= CURRENT_TIMESTAMP - make_interval(days => %s)
-            GROUP BY 1, 2""", (DIAS,))
+        __TENANT__
+            GROUP BY 1, 2""".replace('__TENANT__', TENANT_WHERE), (DIAS,))
         semanal = {}
         for prod, semana, n in cur.fetchall():
             semanal.setdefault(prod, []).append(n)
