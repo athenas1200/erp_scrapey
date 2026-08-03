@@ -147,6 +147,20 @@ def main():
         # sync silencioso: sempre rodando
         if contar_processos('sync_silencioso.py') == 0:
             iniciar('sync_silencioso.py')
+        # tunel persistente do dashboard xicara (porta 15437): sempre rodando
+        if contar_processos('tunel_persistente.py') == 0:
+            iniciar('tunel_persistente.py', subdir='xicara')
+        # streamlit dashboard xicara (porta 8501): sempre rodando
+        if contar_processos('dashboard.py') == 0:
+            cmd = [PY, '-m', 'streamlit', 'run',
+                   os.path.join(BASE, 'xicara', 'dashboard.py'),
+                   '--server.port', '8501', '--server.headless', 'true']
+            try:
+                subprocess.Popen(cmd, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                                 cwd=os.path.join(BASE, 'xicara'))
+                log("iniciado: streamlit dashboard.py (porta 8501)")
+            except Exception as ex:
+                log("falha ao iniciar streamlit dashboard: %s" % ex)
         # tela web: sempre rodando
         if contar_processos('tela_log_server.py') == 0:
             iniciar('tela_log_server.py')
