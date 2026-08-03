@@ -206,28 +206,15 @@ def sync_one(scur, pcur, pconn, t, log):
     tp = scur.execute("SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=? AND COLUMN_NAME=?", t, pkcol).fetchone()
     numeric = tp is not None and tp[0] in ('int','bigint','smallint','tinyint','decimal','numeric','money','smallmoney','real','float','bit')
 
-    if numeric:
-        pcur.execute('SELECT coalesce(max("%s"), 0) FROM "%s"' % (pkcol, t))
-        max_pg = pcur.fetchone()[0]
-        q = 'SELECT %s FROM dbo.[%s] WHERE %s > ?' % (', '.join(cols), t, pkcol)
-        params = [max_pg]
-    else:
-        pcur.execute('SELECT max(("%s")::text) FROM "%s"' % (pkcol, t))
-        m = pcur.fetchone()[0]
-        max_pg = m if m is not None else ''
-        q = 'SELECT %s FROM dbo.[%s] WHERE CAST(%s AS NVARCHAR(4000)) > ?' % (', '.join(cols), t, pkcol)
-        params = [max_pg]
-    if where_base:
-        q += ' AND %s' % where_base
-    scur.execute(q, params)
-    novos = scur.fetchall()
-    if not novos:
-        return
-    insert = 'INSERT INTO "%s" (%s) OVERRIDING SYSTEM VALUE VALUES %%s' % (t, colnames)
-    for i in range(0, len(novos), BATCH):
-        chunk = novos[i:i+BATCH]
+    # UPSERT: insere quem nao existe e ATUALIZA quem existe (corrige divergencias)
+    upd_set = ', '.join('"%s"=EXCLUDED."%s"' % (c, c) for c in cols if c.lower() != pkcol.lower())
+    if not upd_set:
+        upd_set = '1=1'
+    upsert_suffix = ' ON CONFLICT ("%s") DO UPDATE SET %s' % (pkcol, upd_set)
+
+    def _converter(rows):
         data = []
-        for r in chunk:
+        for r in rows:
             vals = []
             for v in r:
                 if v is None: vals.append(None)
@@ -238,16 +225,63 @@ def sync_one(scur, pcur, pconn, t, log):
                 elif isinstance(v, Decimal): vals.append(v)
                 else: vals.append(str(v))
             data.append(vals)
-        try:
-            execute_values(pcur, insert, data, page_size=BATCH)
-            pconn.commit()
-            msg = "[%s] +%d %s" % (time.strftime('%H:%M:%S'), len(data), t)
-            log.write(msg + '\n'); log.flush()
-            jlog({'tipo': 'salvo', 'tabela': t, 'registros': len(data)})
-        except Exception as e:
-            pconn.rollback()
-            log.write("[%s] ERRO %s: %s\n" % (time.strftime('%H:%M:%S'), t, str(e)[:120])); log.flush()
-            jlog({'tipo': 'erro', 'tabela': t, 'msg': str(e)[:300]})
+        return data
+
+    def _gravar(rows):
+        if not rows:
+            return 0
+        insert = 'INSERT INTO "%s" (%s) OVERRIDING SYSTEM VALUE VALUES %%s %s' % (t, colnames, upsert_suffix)
+        total = 0
+        for i in range(0, len(rows), BATCH):
+            chunk = rows[i:i+BATCH]
+            data = _converter(chunk)
+            try:
+                execute_values(pcur, insert, data, page_size=BATCH)
+                pconn.commit()
+                total += len(data)
+                log.write("[%s] upsert +%d %s\n" % (time.strftime('%H:%M:%S'), len(data), t)); log.flush()
+                jlog({'tipo': 'salvo', 'tabela': t, 'registros': len(data)})
+            except Exception as e:
+                pconn.rollback()
+                log.write("[%s] ERRO %s: %s\n" % (time.strftime('%H:%M:%S'), t, str(e)[:120])); log.flush()
+                jlog({'tipo': 'erro', 'tabela': t, 'msg': str(e)[:300]})
+        return total
+
+    select_cols = ', '.join(cols)
+
+    # 1) NOVOS por PK crescente (pega o grosso rapidamente, com UPSERT)
+    if numeric:
+        pcur.execute('SELECT coalesce(max("%s"), 0) FROM "%s"' % (pkcol, t))
+        max_pg = pcur.fetchone()[0]
+        q1 = 'SELECT %s FROM dbo.[%s] WHERE %s > ?' % (select_cols, t, pkcol)
+        params1 = [max_pg]
+    else:
+        pcur.execute('SELECT max(("%s")::text) FROM "%s"' % (pkcol, t))
+        m = pcur.fetchone()[0]
+        max_pg = m if m is not None else ''
+        q1 = 'SELECT %s FROM dbo.[%s] WHERE CAST(%s AS NVARCHAR(4000)) > ?' % (select_cols, t, pkcol)
+        params1 = [max_pg]
+    if where_base:
+        q1 += ' AND %s' % where_base
+    scur.execute(q1, params1)
+    novos = scur.fetchall()
+    _gravar(novos)
+
+    # 2) CORRECAO por Data_Alteracao (criterio principal p/ tabelas de movimento):
+    #    re-varre a janela de alteracao e faz UPSERT — pega novos com PK
+    #    intermediario/retroativo E edicoes/estornos que o PK crescente nao pega.
+    if is_mov and tem_da:
+        janela = "DATEADD(day, -30, GETDATE())"
+        q2 = ('SELECT %s FROM dbo.[%s] '
+              'WHERE Data_Alteracao >= %s AND %s' %
+              (select_cols, t, janela, where_base or '1=1'))
+        scur.execute(q2)
+        corretivos = scur.fetchall()
+        if corretivos:
+            n = _gravar(corretivos)
+            if n:
+                log.write("[%s] correcao(Data_Alteracao) +%d %s\n" % (time.strftime('%H:%M:%S'), n, t)); log.flush()
+                jlog({'tipo': 'correcao', 'tabela': t, 'registros': n})
 
 def main():
     log = io.open(BASE + r'\sync_log.txt', 'a', encoding='utf-8')
